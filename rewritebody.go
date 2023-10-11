@@ -66,8 +66,6 @@ func (r *rewriteBody) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		log.Printf("unable to write rewrited body: %v", err)
 	}
-
-	fmt.Println(resp[r.config.obj])
 	jsonResp, _ := json.Marshal(resp[r.config.obj])
 	rw.Write(jsonResp)
 }
