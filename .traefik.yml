@@ -1,10 +1,6 @@
 displayName: Rewrite Body
-summary: Rewrites the HTTP response body by replacing a search regex by a replacement string.
 type: middleware
-import: github.com/traefik/plugin-rewritebody
-compatibility: TODO
+import: github.com/Eva-Music/plugin-rewritebody
 testData:
-  lastModified: true
   rewrites:
-    - regex: "bar"
-      replacement: "foo"
+    obj: "data"

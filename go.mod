@@ -1,3 +1,3 @@
-module github.com/traefik/plugin-rewritebody
+module github.com/Eva-Music/plugin-rewritebody
 
 go 1.15
