@@ -1,4 +1,5 @@
 displayName: Rewrite Body
+summary: Rewrite body
 type: middleware
 import: github.com/Eva-Music/plugin-rewritebody
 testData:
