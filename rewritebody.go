@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"regexp"
 )
 
 // Rewrite holds one rewrite body configuration.
