@@ -5,8 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/tidwall/gjson"
 	"log"
 	"net"
 	"net/http"
@@ -18,9 +18,9 @@ import (
 //	Replacement string `json:"replacement,omitempty"`
 //}
 
-type Path struct {
-	NestedName string `json:"nestedName,omitempty"`
-}
+//type Path struct {
+//	NestedName string `json:"nestedName,omitempty"`
+//}
 
 // Config holds the plugin configuration.
 //type Config struct {
@@ -29,7 +29,7 @@ type Path struct {
 //}
 
 type Config struct {
-	Paths []Path `json:"paths,omitempty"`
+	Path string `json:"path,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -42,9 +42,9 @@ func CreateConfig() *Config {
 //	replacement []byte
 //}
 
-type path struct {
-	nestedName string
-}
+//type path struct {
+//	nestedName string
+//}
 
 //
 //type rewriteBody struct {
@@ -54,87 +54,83 @@ type path struct {
 //	lastModified bool
 //}
 
-type pathBody struct {
-	next  http.Handler
-	paths []path
+type rewrite struct {
+	next   http.Handler
+	config Config
 }
 
 // New creates and returns a new rewrite body plugin instance.
-func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	paths := make([]path, len(config.Paths))
+func New(_ context.Context, next http.Handler, config *Config, _ string) (http.Handler, error) {
+	//paths := make([]path, len(config.Paths))
+	//
+	//for i, rewriteConfig := range config.Paths {
+	//	paths[i] = path{
+	//		nestedName: string(rewriteConfig.NestedName),
+	//	}
+	//}
 
-	for i, rewriteConfig := range config.Paths {
-		paths[i] = path{
-			nestedName: string(rewriteConfig.NestedName),
-		}
-	}
-
-	return &pathBody{
-		next:  next,
-		paths: paths,
+	return &rewrite{
+		next:   next,
+		config: *config,
 	}, nil
 }
 
-func (r *pathBody) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (r *rewrite) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	wrappedWriter := &responseWriter{
+		body:           &bytes.Buffer{},
 		ResponseWriter: rw,
 	}
 
 	r.next.ServeHTTP(wrappedWriter, req)
 
-	bodyBytes := wrappedWriter.buffer.Bytes()
+	bodyBytes := wrappedWriter.body.Bytes()
 
-	contentEncoding := wrappedWriter.Header().Get("Content-Encoding")
+	//contentEncoding := wrappedWriter.Header().Get("Content-Encoding")
+	//
+	//if contentEncoding != "" && contentEncoding != "identity" {
+	//	if _, err := rw.Write(bodyBytes); err != nil {
+	//		log.Printf("unable to write body: %v", err)
+	//	}
+	//
+	//	return
+	//}
 
-	if contentEncoding != "" && contentEncoding != "identity" {
-		if _, err := rw.Write(bodyBytes); err != nil {
-			log.Printf("unable to write body: %v", err)
-		}
+	//resp := make(map[string]interface{})
+	//err := json.Unmarshal(bodyBytes, &resp)
+	//if err != nil {
+	//	log.Printf("unable to write rewrited body: %v", err)
+	//}
 
-		return
-	}
+	//var jsonResp json.RawMessage
+	//for _, rwt := range r.paths {
+	//	jsonResp, _ = json.Marshal(resp[rwt.nestedName])
+	//
+	//}
 
-	var resp map[string]interface{}
-	err := json.Unmarshal(bodyBytes, &resp)
-	if err != nil {
-		log.Printf("unable to write rewrited body: %v", err)
-	}
-
-	var jsonResp json.RawMessage
-	for _, rwt := range r.paths {
-		jsonResp, _ = json.Marshal(resp[rwt.nestedName])
-
-	}
-
-	if _, err := rw.Write(jsonResp); err != nil {
+	result := gjson.GetBytes(bodyBytes, r.config.Path)
+	if _, err := rw.Write([]byte(result.Raw)); err != nil {
 		log.Printf("unable to write rewrited body: %v", err)
 	}
 }
 
 type responseWriter struct {
-	buffer      bytes.Buffer
-	wroteHeader bool
-
+	body *bytes.Buffer
 	http.ResponseWriter
 }
 
-func (r *responseWriter) WriteHeader(statusCode int) {
-
-	r.wroteHeader = true
-
-	// Delegates the Content-Length Header creation to the final body write.
-	r.ResponseWriter.Header().Del("Content-Length")
-
-	r.ResponseWriter.WriteHeader(statusCode)
+func (r responseWriter) Write(b []byte) (int, error) {
+	r.ResponseWriter.WriteHeader(http.StatusOK)
+	r.body.Write(b)
+	return r.ResponseWriter.Write(b)
 }
 
-func (r *responseWriter) Write(p []byte) (int, error) {
-	if !r.wroteHeader {
-		r.WriteHeader(http.StatusOK)
-	}
-
-	return r.buffer.Write(p)
-}
+//func (r *responseWriter) Write(p []byte) (int, error) {
+//	if !r.wroteHeader {
+//		r.WriteHeader(http.StatusOK)
+//	}
+//
+//	return r.buffer.Write(p)
+//}
 
 func (r *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := r.ResponseWriter.(http.Hijacker)
