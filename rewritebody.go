@@ -5,23 +5,31 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"regexp"
 )
 
 // Rewrite holds one rewrite body configuration.
-type Rewrite struct {
-	Regex       string `json:"regex,omitempty"`
-	Replacement string `json:"replacement,omitempty"`
+//type Rewrite struct {
+//	Regex       string `json:"regex,omitempty"`
+//	Replacement string `json:"replacement,omitempty"`
+//}
+
+type Path struct {
+	NestedName string `json:"nestedName,omitempty"`
 }
 
 // Config holds the plugin configuration.
+//type Config struct {
+//	LastModified bool      `json:"lastModified,omitempty"`
+//	Rewrites     []Rewrite `json:"rewrites,omitempty"`
+//}
+
 type Config struct {
-	LastModified bool      `json:"lastModified,omitempty"`
-	Rewrites     []Rewrite `json:"rewrites,omitempty"`
+	Paths []Path `json:"paths,omitempty"`
 }
 
 // CreateConfig creates and initializes the plugin configuration.
@@ -29,45 +37,46 @@ func CreateConfig() *Config {
 	return &Config{}
 }
 
-type rewrite struct {
-	regex       *regexp.Regexp
-	replacement []byte
+//type rewrite struct {
+//	regex       *regexp.Regexp
+//	replacement []byte
+//}
+
+type path struct {
+	nestedName string
 }
 
-type rewriteBody struct {
-	name         string
-	next         http.Handler
-	rewrites     []rewrite
-	lastModified bool
+//
+//type rewriteBody struct {
+//	name         string
+//	next         http.Handler
+//	rewrites     []rewrite
+//	lastModified bool
+//}
+
+type pathBody struct {
+	next  http.Handler
+	paths []path
 }
 
 // New creates and returns a new rewrite body plugin instance.
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	rewrites := make([]rewrite, len(config.Rewrites))
+	paths := make([]path, len(config.Paths))
 
-	for i, rewriteConfig := range config.Rewrites {
-		regex, err := regexp.Compile(rewriteConfig.Regex)
-		if err != nil {
-			return nil, fmt.Errorf("error compiling regex %q: %w", rewriteConfig.Regex, err)
-		}
-
-		rewrites[i] = rewrite{
-			regex:       regex,
-			replacement: []byte(rewriteConfig.Replacement),
+	for i, rewriteConfig := range config.Paths {
+		paths[i] = path{
+			nestedName: string(rewriteConfig.NestedName),
 		}
 	}
 
-	return &rewriteBody{
-		name:         name,
-		next:         next,
-		rewrites:     rewrites,
-		lastModified: config.LastModified,
+	return &pathBody{
+		next:  next,
+		paths: paths,
 	}, nil
 }
 
-func (r *rewriteBody) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (r *pathBody) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	wrappedWriter := &responseWriter{
-		lastModified:   r.lastModified,
 		ResponseWriter: rw,
 	}
 
@@ -85,27 +94,31 @@ func (r *rewriteBody) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	for _, rwt := range r.rewrites {
-		bodyBytes = rwt.regex.ReplaceAll(bodyBytes, rwt.replacement)
+	var resp map[string]interface{}
+	err := json.Unmarshal(bodyBytes, &resp)
+	if err != nil {
+		log.Printf("unable to write rewrited body: %v", err)
 	}
 
-	if _, err := rw.Write(bodyBytes); err != nil {
+	var jsonResp json.RawMessage
+	for _, rwt := range r.paths {
+		jsonResp, _ = json.Marshal(resp[rwt.nestedName])
+
+	}
+
+	if _, err := rw.Write(jsonResp); err != nil {
 		log.Printf("unable to write rewrited body: %v", err)
 	}
 }
 
 type responseWriter struct {
-	buffer       bytes.Buffer
-	lastModified bool
-	wroteHeader  bool
+	buffer      bytes.Buffer
+	wroteHeader bool
 
 	http.ResponseWriter
 }
 
 func (r *responseWriter) WriteHeader(statusCode int) {
-	if !r.lastModified {
-		r.ResponseWriter.Header().Del("Last-Modified")
-	}
 
 	r.wroteHeader = true
 
